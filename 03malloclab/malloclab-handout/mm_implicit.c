@@ -14,7 +14,7 @@
 
 #define WSIZE       4
 #define DSIZE       8
-#define CHUNKSIZE   (1<<8)
+#define CHUNKSIZE   (1<<9)
 
 #define MAX(x, y)   ((x) > (y) ? (x) : (y))
 
@@ -40,6 +40,7 @@
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 void* heap_listp;
+void* heap_epilp;
 void* last_found;
 
 /*
@@ -94,6 +95,8 @@ static void* extend_heap(size_t words) {
     PUT(FTRP(bp), PACK(size, 0));
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
 
+    heap_epilp = NEXT_BLKP(bp);
+
     return coalesce(bp);
 }
 
@@ -104,23 +107,23 @@ static void* find_fit(size_t asize) {
 
     // FIRST FIT
     
-    void* finderBp = heap_listp;
-    while (1) {
-        // if found fit in free list
-        if (
-            GET_ALLOC(HDRP(finderBp)) == 0 
-            && GET_SIZE(HDRP(finderBp)) >= asize
-        ) break;
+    // void* finderBp = heap_listp;
+    // while (1) {
+    //     // if found fit in free list
+    //     if (
+    //         GET_ALLOC(HDRP(finderBp)) == 0 
+    //         && GET_SIZE(HDRP(finderBp)) >= asize
+    //     ) break;
 
-        // if reached epilogue of free list
-        if (GET(HDRP(finderBp)) == 0x1) {
-            return NULL;
-        }
+    //     // if reached epilogue of free list
+    //     if (GET(HDRP(finderBp)) == 0x1) {
+    //         return NULL;
+    //     }
 
-        // check next
-        finderBp = NEXT_BLKP(finderBp);
-    }
-    return finderBp;
+    //     // check next
+    //     finderBp = NEXT_BLKP(finderBp);
+    // }
+    // return finderBp;
     
 
     // NEXT FIT
@@ -150,6 +153,49 @@ static void* find_fit(size_t asize) {
     // }
 
     // return finderBp;
+
+
+    // NEXT FIT - until last alloc block
+    
+    void* finderBp = NEXT_BLKP(last_found);
+    void* last_alloced = 
+        GET_ALLOC(HDRP(PREV_BLKP(heap_epilp))) == 0x1 
+        ? PREV_BLKP(heap_epilp)
+        : PREV_BLKP(PREV_BLKP(heap_epilp))
+        ;
+
+    while (1) {
+        // if found fit in free list
+        if (
+            GET_ALLOC(HDRP(finderBp)) == 0 
+            && GET_SIZE(HDRP(finderBp)) >= asize
+        ) {
+            last_found = finderBp;
+            return finderBp;
+        }
+
+        // if searched every free list
+        if (finderBp == last_found) {
+            // find last free block
+            if (
+                GET_ALLOC(HDRP(NEXT_BLKP(last_alloced))) == 0
+                && GET_SIZE(HDRP(NEXT_BLKP(last_alloced))) >= asize
+            ) {
+                last_found = NEXT_BLKP(last_alloced);
+                return NEXT_BLKP(last_alloced);
+            }
+            return NULL;
+        }
+
+        // check next
+        if (finderBp == last_alloced) 
+            finderBp = heap_listp;
+        else
+            finderBp = NEXT_BLKP(finderBp);
+
+    }
+
+    return finderBp;
     
 
     // BEST FIT
@@ -213,6 +259,7 @@ static void place(void* bp, size_t asize) {
 }
 
 
+// API functions
 
 /* 
  * mm_init - initialize the malloc package.
@@ -256,18 +303,11 @@ void *mm_malloc(size_t size)
     
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
+        last_found = bp;
         return bp;
     }
 
-    // no fit case
-    size_t lastBp = heap_listp;
-    while (GET(HDRP(NEXT_BLKP(lastBp))) != 0x1) lastBp = NEXT_BLKP(lastBp);
-    if (GET_ALLOC(HDRP(lastBp)) == 0) {
-        extendsize = asize - GET_SIZE(HDRP(lastBp));
-    }
-    else {
-        extendsize = asize;
-    }
+    extendsize = MAX(asize, CHUNKSIZE);
 
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL) 
         return NULL;
@@ -297,11 +337,68 @@ void *mm_realloc(void *ptr, size_t size)
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
+
+    size_t asize;
+    size_t extendsize;
+    size_t last_free_size;
+
+    if (size <= DSIZE)
+        asize = 2 * DSIZE;
+    else
+        asize = (size + DSIZE + (DSIZE - 1)) / DSIZE * DSIZE;
+
+    // if size unchanged
+    if (asize == GET_SIZE(HDRP(ptr))) {
+        return ptr;
+    }
+
+    // if size shrinks
+    else if (asize < GET_SIZE(HDRP(ptr))) {
+        place(ptr, asize);
+        return ptr;
+    }
+
+    // if memory can inflate inplace
+    if (ptr == PREV_BLKP(heap_epilp)) {
+        extendsize = MAX(asize, CHUNKSIZE);
+
+        if (extend_heap(extendsize/WSIZE) == NULL) 
+            return NULL;
+        
+        last_free_size = GET_SIZE(HDRP(ptr)) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) - asize;
+
+        PUT(HDRP(ptr), PACK(asize, 1));
+        PUT(FTRP(ptr), PACK(asize, 1));
+        PUT(HDRP(NEXT_BLKP(ptr)), PACK(last_free_size, 0));
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(last_free_size, 0));
+
+        return ptr;
+    }
+
+    // if memory can inflate inplace - 2
+    if (
+        ptr == PREV_BLKP(PREV_BLKP(heap_epilp)) &&
+        GET_ALLOC(HDRP(PREV_BLKP(ptr))) == 0
+    ) {
+        if (GET_SIZE(HDRP(ptr)) + GET_ALLOC(HDRP(PREV_BLKP(ptr))) < asize) {
+            extendsize = MAX(asize - GET_SIZE(HDRP(ptr)) - GET_ALLOC(HDRP(PREV_BLKP(ptr))), CHUNKSIZE);
+            if (extend_heap(extendsize/WSIZE) == NULL)
+                return NULL;
+        }
+
+        PUT(HDRP(ptr), PACK(asize, 1));
+        PUT(FTRP(ptr), PACK(asize, 1));
+        size_t ab_to_ep = HDRP(heap_epilp) - HDRP(NEXT_BLKP(ptr));
+        PUT(HDRP(NEXT_BLKP(ptr)), PACK(ab_to_ep, 0));
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(ab_to_ep, 0));
+
+        return ptr;
+    }
     
     newptr = mm_malloc(size);
     if (newptr == NULL)
       return NULL;
-    // copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+
     copySize = GET_SIZE(HDRP(oldptr));
     if (size < copySize)
       copySize = size;
