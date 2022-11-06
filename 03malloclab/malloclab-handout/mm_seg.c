@@ -24,9 +24,8 @@
 
 #define WSIZE       4
 #define DSIZE       8
-#define INIT_HEAP   (1<<6)
+#define INITCHUNKSIZE   (1<<6)
 #define CHUNKSIZE   (1<<12)
-#define REALLOC_BUFFER  (1<<7)
 #define SPLIT_THRES 100
 
 #define MAX(x, y)   ((x) > (y) ? (x) : (y))
@@ -43,10 +42,8 @@
 #define GET_SIZE(p)     (GET(p) & ~0x7)
 #define GET_ALLOC(p)    (GET(p) & 0x1)
 
-#define GET_FLAGS(p)        (GET(p) & 0x7)
 #define GET_LBIT(p, n)      ((GET(p) >> n) & 0x1)
 #define PUT_LBIT(p, n, v)   (*(unsigned int *)(p) = (*(unsigned int *)p & ~(1 << n)) | (v << n))
-#define BIT_MODIFIED(val, n, v) (((unsigned int)val & (~(1 << n))) | (v << n))
 
 #define HDRP(bp)    ((char *)bp - WSIZE)
 #define FTRP(bp)    ((char *)bp + GET_SIZE(HDRP(bp)) - DSIZE)
@@ -80,7 +77,7 @@ static void** seg_listp;
  * Util Functions - maths
  */
 
-static size_t CEIL_POW2_IDX (size_t val) {
+size_t CEIL_POW2_IDX (size_t val) {
     size_t idx = 0;
 
     if (val <= 1)
@@ -221,9 +218,8 @@ static void* coalesce(void* bp) {
         pop_from_seglist(bp);
         pop_from_seglist(PREV_BLKP(bp));
         bp = PREV_BLKP(bp);
-        
-        PUT(HDRP(bp), PACK(size, BIT_MODIFIED(GET_FLAGS(HDRP(bp)), 0, 0)));
-        PUT(FTRP(bp), PACK(size, BIT_MODIFIED(GET_FLAGS(FTRP(bp)), 0, 0)));
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
         push_in_seglist(bp);
         
     }
@@ -233,8 +229,8 @@ static void* coalesce(void* bp) {
 
         pop_from_seglist(bp);
         pop_from_seglist(NEXT_BLKP(bp));
-        PUT(HDRP(bp), PACK(size, BIT_MODIFIED(GET_FLAGS(HDRP(bp)), 0, 0)));
-        PUT(FTRP(bp), PACK(size, BIT_MODIFIED(GET_FLAGS(FTRP(bp)), 0, 0)));
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
         push_in_seglist(bp);
     }
 
@@ -245,8 +241,8 @@ static void* coalesce(void* bp) {
         pop_from_seglist(PREV_BLKP(bp));
         pop_from_seglist(NEXT_BLKP(bp));
         bp = PREV_BLKP(bp);
-        PUT(HDRP(bp), PACK(size, BIT_MODIFIED(GET_FLAGS(HDRP(bp)), 0, 0)));
-        PUT(FTRP(bp), PACK(size, BIT_MODIFIED(GET_FLAGS(FTRP(bp)), 0, 0)));
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
         push_in_seglist(bp);
     }
 
@@ -385,7 +381,6 @@ void mm_free(void *ptr)
     size_t size = GET_SIZE(HDRP(ptr));
 
     PUT_LBIT(HDRP(NEXT_BLKP(ptr)), 1, 0);
-    PUT_LBIT(FTRP(NEXT_BLKP(ptr)), 1, 0);
     PUT(HDRP(ptr), PACK(size, 0));
     PUT(FTRP(ptr), PACK(size, 0));
 
@@ -398,55 +393,29 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+    void *oldptr = ptr;
+    void *newptr;
+    size_t copySize;
+
     size_t asize;
-    size_t target_size;
-    size_t now_size;
-    size_t extend_size;
-    void* return_p = ptr;
-    void* ep;
+    size_t extendsize;
+    size_t last_free_size;
 
-    // Ignore size 0 cases
-    if (size == 0)
-        return NULL;
-
-    asize = size <= DSIZE ? 2 * DSIZE : (size + DSIZE + (DSIZE - 1)) / DSIZE * DSIZE;
-    target_size = asize + REALLOC_BUFFER;
-
-    now_size = GET_SIZE(HDRP(ptr));
-
-    if (now_size < target_size) {
-        if (
-            (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) == 0 && GET(HDRP(NEXT_BLKP(NEXT_BLKP(ptr)))) == 0x1)
-            || (GET(HDRP(NEXT_BLKP(ptr))) == 0x1)
-        ) {
-            now_size += GET_SIZE(HDRP(NEXT_BLKP(ptr)));
-            if (now_size < target_size) {
-                extend_size = MAX(target_size - now_size, CHUNKSIZE);
-                if((ep = extend_heap(extend_size / WSIZE)) == NULL)
-                    return NULL;
-                now_size += extend_size;
-            }
-
-            pop_from_seglist(NEXT_BLKP(ptr));
-            PUT(HDRP(ptr), PACK(now_size, 1));
-            PUT(FTRP(ptr), PACK(now_size, 1));
-
-            return_p = ptr;
-        }
-        else {
-            return_p = mm_malloc(target_size);
-            memcpy(return_p, ptr, MIN(size, target_size));
-            mm_free(ptr);
-        }
-    }
+    if (size <= DSIZE)
+        asize = 2 * DSIZE;
+    else
+        asize = (size + DSIZE + (DSIZE - 1)) / DSIZE * DSIZE;
     
-    if (
-        now_size - GET_SIZE(HDRP(return_p)) < 2 * REALLOC_BUFFER
-        && GET_ALLOC(HDRP(NEXT_BLKP(return_p))) == 0x0
-    )
-        PUT_LBIT(HDRP(NEXT_BLKP(return_p)), 1, 1);
+    newptr = mm_malloc(size);
+    if (newptr == NULL)
+      return NULL;
 
-    return return_p;
+    copySize = GET_SIZE(HDRP(oldptr));
+    if (size < copySize)
+      copySize = size;
+    memcpy(newptr, oldptr, copySize);
+    mm_free(oldptr);
+    return newptr;
 }
 
 
