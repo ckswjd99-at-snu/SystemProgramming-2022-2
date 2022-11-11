@@ -166,6 +166,50 @@ int main(int argc, char **argv)
 void eval(char *cmdline) 
 {
     // TODO
+
+    char *argv[MAXARGS];
+    int bg = parseline(cmdline, argv);
+    pid_t pid;
+    int execed;
+    int status;
+
+    /* EMPTY COMMAND CASE */
+    if (argv[0] == NULL) return;
+
+    /* BUILTIN COMMAND CASE */
+    if(builtin_cmd(argv)) return;
+
+    pid = fork();
+    if (pid == -1) {        // fork failed
+        app_error("fork error");
+        return;
+    }
+    else if (pid == 0) {    // now child process
+        setpgid(0, 0);
+        execed = execve(argv[0], argv, environ);
+        if (execed < 0) {
+            app_error("execve error");
+            return;
+        }
+    }
+    else {                  // now parent process
+        if (bg) {
+            addjob(&jobs, pid, BG, cmdline);
+            printf("%d %s", pid, cmdline);
+        }
+        else {
+            addjob(&jobs, pid, FG, cmdline);
+            if (waitfg(pid) < 0) {
+                app_error("waitfg error");
+                return;
+            }
+            deletejob(&jobs, pid);
+        }
+    }
+
+
+
+
     return;
 }
 
@@ -232,7 +276,21 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
-    // TODO
+    if (!strcmp(argv[0], "quit")) {
+        // quit command exits tsh
+        exit(0);
+        return 1;
+    }
+    else if (!strcmp(argv[0], "jobs")) {
+        // jobs command shows job list
+        listjobs(&jobs);
+        return 1;
+    }
+    else if (!strcmp(argv[0], "bg") || !strcmp(argv[0], "fg")) {
+        do_bgfg(argv);
+        return 1;
+    }
+    
     return 0;     /* not a builtin command */
 }
 
@@ -242,6 +300,58 @@ int builtin_cmd(char **argv)
 void do_bgfg(char **argv) 
 {
     // TODO
+
+    pid_t pid;
+    int jid;
+    struct job_t* jobtemp;
+
+    if (!strcmp(argv[0], "bg")) {
+        // bg command continues BG process in BG
+        if(argv[1][0] == '%') { // search by jid
+            jid = strtol(argv[1]+1, NULL, 10);
+            jobtemp = getjobjid(&jobs, jid);
+            pid = jobtemp->pid
+        }
+        else {                  // search by pid
+            pid = strtol(argv[1], NULL, 10);
+            jobtemp = getjobpid(&jobs, pid);
+            jid = jobtemp->jid;
+        }
+
+        // update job state
+        jobtemp->state = BG;
+
+        // send SIGCONT to process
+        if (kill(pid, SIGCONT) < 0) {
+            app_error("kill error");
+            return -1;
+        }
+    }
+    else if (!strcmp(argv[0], "fg")) {
+        // fg command continues BG process in FG
+        if(argv[1][0] == '%') { // search by jid
+            jid = strtol(argv[1]+1, NULL, 10);
+            jobtemp = getjobjid(&jobs, jid);
+            pid = jobtemp->pid
+        }
+        else {                  // search by pid
+            pid = strtol(argv[1], NULL, 10);
+            jobtemp = getjobpid(&jobs, pid);
+            jid = jobtemp->jid;
+        }
+
+        // update job state
+        jobtemp->state = FG;
+
+        // send SIGCONT to process
+        if (kill(pid, SIGCONT) < 0) {
+            app_error("kill error");
+            return -1;
+        }
+
+        // wait until the job is not FG
+        waitfg(pid);
+    }
     return;
 }
 
