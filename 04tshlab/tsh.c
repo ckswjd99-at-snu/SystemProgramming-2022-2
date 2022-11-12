@@ -172,7 +172,7 @@ void eval(char *cmdline)
     pid_t pid;
     struct job_t* targetp;
     int execed;
-    int status;
+    sigset_t set;
 
     /* EMPTY COMMAND CASE */
     if (argv[0] == NULL) return;
@@ -180,12 +180,17 @@ void eval(char *cmdline)
     /* BUILTIN COMMAND CASE */
     if(builtin_cmd(argv)) return;
 
+    sigemptyset(&set);
+    sigaddset(&set, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &set, NULL);
+
     pid = fork();
     if (pid == -1) {        // fork failed
         app_error("fork error");
         return;
     }
     else if (pid == 0) {    // now child process
+        sigprocmask(SIG_UNBLOCK, &set, NULL);
         setpgid(0, 0);
         execed = execve(argv[0], argv, environ);
         if (execed < 0) {
@@ -196,14 +201,18 @@ void eval(char *cmdline)
     else {                  // now parent process
         if (bg) {               // run background and continue shell
             addjob(jobs, pid, BG, cmdline);
+            sigprocmask(SIG_UNBLOCK, &set, NULL);
             targetp = getjobpid(jobs, pid);
             printf("[%d] (%d) %s", targetp->jid, pid, cmdline);
         }
         else {                  // run foreground and wait
             addjob(jobs, pid, FG, cmdline);
+            sigprocmask(SIG_UNBLOCK, &set, NULL);
             waitfg(pid);
         }
     }
+
+    
 
 
 
@@ -420,7 +429,6 @@ void waitfg(pid_t pid)
 void sigchld_handler(int sig) 
 {
     // TODO
-    // printf("sigchld!\n");
     pid_t pid;
     int status;
     struct job_t* targetp;
