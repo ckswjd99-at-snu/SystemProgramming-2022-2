@@ -88,4 +88,6 @@ rtest16:
 clean:
 	rm -f $(FILES) *.o *~
 
-
+recomp:
+	rm -f tsh
+	make $(TSH)
