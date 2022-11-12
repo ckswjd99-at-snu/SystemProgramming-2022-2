@@ -91,3 +91,45 @@ clean:
 recomp:
 	rm -f tsh
 	make $(TSH)
+
+test_ref:
+	@echo "output from ./tshref"
+	@rm -f mytshref.out
+	@touch mytshref.out
+	@$(DRIVER) -t trace01.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace02.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace03.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace04.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace05.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace06.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace07.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace08.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace09.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace10.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace11.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace12.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace13.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace14.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace15.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+	@$(DRIVER) -t trace16.txt -s $(TSHREF) -a $(TSHARGS) >> mytshref.out
+
+test_tsh:
+	@echo "output from ./tsh"
+	@rm -f mytsh.out
+	@touch mytsh.out
+	@$(DRIVER) -t trace01.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace02.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace03.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace04.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace05.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace06.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace07.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace08.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace09.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace10.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace11.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace12.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace13.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace14.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace15.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out
+	@$(DRIVER) -t trace16.txt -s $(TSH) -a $(TSHARGS) >> mytsh.out

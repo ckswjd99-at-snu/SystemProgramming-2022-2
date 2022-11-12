@@ -173,6 +173,7 @@ void eval(char *cmdline)
     struct job_t* targetp;
     int execed;
     sigset_t set;
+    char printbuffer[256];
 
     /* EMPTY COMMAND CASE */
     if (argv[0] == NULL) return;
@@ -194,7 +195,8 @@ void eval(char *cmdline)
         setpgid(0, 0);
         execed = execve(argv[0], argv, environ);
         if (execed < 0) {
-            app_error("execve error");
+            sprintf(printbuffer, "%s: Command not found", argv[0]);
+            app_error(printbuffer);
             return;
         }
     }
@@ -298,9 +300,7 @@ int builtin_cmd(char **argv)
     else if (!strcmp(argv[0], "bg") || !strcmp(argv[0], "fg")) {
         if (*(argv+1) == NULL) {
             // if no pid or jid has come
-            printf("Usage: %s [pid] or [%%jid]\n", argv[0]);
-            printf("       [pid]   process id\n");
-            printf("       [%%jid]  job id\n");
+            printf("%s command requires PID or %%jobid argument\n", argv[0]);
             return 1;
         }
         do_bgfg(argv);
@@ -328,8 +328,13 @@ void do_bgfg(char **argv)
             jid = strtol(argv[1]+1, NULL, 10);
             jobtemp = getjobjid(jobs, jid);
 
+            if (jid == NULL) {
+                printf("bg: argument must be a PID or %%jobid\n");
+                return;
+            }
+
             if (jobtemp == NULL) {
-                printf("no such job id!\n");
+                printf("%%%d: No such job\n", jid);
                 return;
             }
             pid = jobtemp->pid;
@@ -341,8 +346,13 @@ void do_bgfg(char **argv)
             pid = strtol(argv[1], NULL, 10);
             jobtemp = getjobpid(jobs, pid);
 
+            if (pid == NULL) {
+                printf("bg: argument must be a PID or %%jobid\n");
+                return;
+            }
+
             if (jobtemp == NULL) {
-                printf("no such process id!\n");
+                printf("(%d): No such process\n", pid);
                 return;
             }
             jid = jobtemp->jid;
@@ -366,8 +376,13 @@ void do_bgfg(char **argv)
             jid = strtol(argv[1]+1, NULL, 10);
             jobtemp = getjobjid(jobs, jid);
 
+            if (jid == NULL) {
+                printf("fg: argument must be a PID or %%jobid\n");
+                return;
+            }
+
             if (jobtemp == NULL) {
-                printf("no such job id!\n");
+                printf("%%%d: No such job\n", jid);
                 return;
             }
             pid = jobtemp->pid;
@@ -376,8 +391,13 @@ void do_bgfg(char **argv)
             pid = strtol(argv[1], NULL, 10);
             jobtemp = getjobpid(jobs, pid);
 
+            if (pid == NULL) {
+                printf("fg: argument must be a PID or %%jobid\n");
+                return;
+            }
+
             if (jobtemp == NULL) {
-                printf("no such process id!\n");
+                printf("(%d): No such process\n", pid);
                 return;
             }
             jid = jobtemp->jid;
@@ -440,9 +460,14 @@ void sigchld_handler(int sig)
             deletejob(jobs, pid);
         }
         else if (WIFSIGNALED(status)) { // signal termination case
+            printf("Job [%d] (%d) terminated by signal %d\n", targetp->jid, targetp->pid, WTERMSIG(status));
             deletejob(jobs, pid);
         }
         else if (WIFSTOPPED(status)) {  // stop case
+            // int termsig = WTERMSIG(status);
+            // if(termsig != 127) {
+                printf("Job [%d] (%d) stopped by signal %d\n", targetp->jid, targetp->pid, WSTOPSIG(status));
+            // }
             targetp->state = ST;
         }
     }
@@ -460,7 +485,6 @@ void sigint_handler(int sig)
 {
     // TODO
     pid_t fgp = fgpid(jobs);
-    struct job_t* targetp;
 
     if (!fgp) return;
 
@@ -469,9 +493,6 @@ void sigint_handler(int sig)
         app_error("kill error");
         return;
     }
-
-    targetp = getjobpid(jobs, fgp);
-    printf("Job [%d] (%d) terminated by signal %d\n", targetp->jid, targetp->pid, sig);
     
     return;
 }
@@ -485,7 +506,6 @@ void sigtstp_handler(int sig)
 {
     // TODO
     pid_t fgp = fgpid(jobs);
-    struct job_t* targetp;
 
     if (!fgp) return;
 
@@ -494,9 +514,6 @@ void sigtstp_handler(int sig)
         app_error("kill error");
         return;
     }
-
-    targetp = getjobpid(jobs, fgp);
-    printf("Job [%d] (%d) stopped by signal %d\n", targetp->jid, targetp->pid, sig);
 
     return;
 }
