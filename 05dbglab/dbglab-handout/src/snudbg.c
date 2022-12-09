@@ -119,6 +119,9 @@ void set_debug_state(int pid, enum debugging_state state) {
         }
     } else if (state == NON_STOP) {
         // TODO
+        if(ptrace(PTRACE_CONT, pid, NULL, NULL)<0) {
+            die("Error tracing syscalls");
+        }
     }
     return;
 }
@@ -130,10 +133,15 @@ void set_debug_state(int pid, enum debugging_state state) {
 */
 void handle_read(int pid, ADDR_T addr, unsigned char *buf, size_t len) {
     // TODO: Use the function dump_addr_in_hex() to print the memory data
-    TODO_UNUSED(pid);
-    TODO_UNUSED(addr);
-    TODO_UNUSED(buf);
-    TODO_UNUSED(len);
+    char temp;
+    
+    for (size_t i=0; i<len; i++) {
+        temp = (char)ptrace(PTRACE_PEEKTEXT, pid, addr+i, NULL);
+        buf[i] = temp;
+    }
+
+    dump_addr_in_hex(addr, buf, len);
+
     return;
 }
 
@@ -143,10 +151,13 @@ void handle_read(int pid, ADDR_T addr, unsigned char *buf, size_t len) {
 */
 void handle_write(int pid, ADDR_T addr, unsigned char *buf, size_t len) {
     // TODO
-    TODO_UNUSED(pid);
-    TODO_UNUSED(addr);
-    TODO_UNUSED(buf);
-    TODO_UNUSED(len);
+    long temp;
+    for (size_t i=0; i<len; i++) {
+        temp = ptrace(PTRACE_PEEKTEXT, pid, addr+i, NULL);
+        temp = (temp & 0xFFFFFFFFFFFFFF00) | buf[i];
+        ptrace(PTRACE_POKETEXT, pid, addr+i, temp);
+    }
+
     return;
 }
 
@@ -155,8 +166,17 @@ void handle_write(int pid, ADDR_T addr, unsigned char *buf, size_t len) {
 */
 void handle_break(int pid, ADDR_T addr) {
     // TODO
-    TODO_UNUSED(pid);
-    TODO_UNUSED(addr);
+    long word_modified;
+
+    word_modified = ptrace(PTRACE_PEEKTEXT, pid, addr, NULL);
+
+    bps[num_bps].addr = addr;
+    bps[num_bps].orig_value = word_modified;
+
+    word_modified = (word_modified & 0xFFFFFFFFFFFFFF00) | 0xCC;
+    ptrace(PTRACE_POKETEXT, pid, addr, word_modified);
+
+    num_bps++;
 }
 
 #define CMPGET_REG(REG_TO_CMP)                   \
@@ -184,10 +204,19 @@ void handle_get(char *reg_name, struct user_regs_struct *regs) {
 void handle_set(char *reg_name, unsigned long value,
                 struct user_regs_struct *regs, int pid) {
     // TODO
-    TODO_UNUSED(reg_name);
-    TODO_UNUSED(value);
-    TODO_UNUSED(regs);
-    TODO_UNUSED(pid);
+    #define CMPSET_REG(REG_TO_CMP)                   \
+    if (strcmp(reg_name, #REG_TO_CMP)==0) {      \
+        regs->REG_TO_CMP = (value);                   \
+    }
+
+    CMPSET_REG(rax); CMPSET_REG(rbx); CMPSET_REG(rcx); CMPSET_REG(rdx);
+    CMPSET_REG(rbp); CMPSET_REG(rsp); CMPSET_REG(rsi); CMPSET_REG(rdi);
+    CMPSET_REG(r8);  CMPSET_REG(r9);  CMPSET_REG(r10); CMPSET_REG(r11);
+    CMPSET_REG(r12); CMPSET_REG(r13); CMPSET_REG(r14); CMPSET_REG(r15);
+    CMPSET_REG(rip); CMPSET_REG(eflags);
+
+    set_registers(pid, regs);
+    get_registers(pid, regs);
     return;
 }
 
@@ -215,30 +244,86 @@ void prompt_user(int child_pid, struct user_regs_struct *regs,
 
         if(strcmp("get", action)==0) {
             // TODO
+            char regname[1024];
+            scanf("%1024s", regname);
+            LOG("HANDLE CMD: get [%s]\n", regname);
+            handle_get(regname, regs);
+            continue;
         }
 
         if(strcmp("set", action)==0) {
             // TODO
+            char regname[1024];
+            unsigned long long int setval;
+
+            scanf("%1024s", regname);
+            scanf("%llx", &setval);
+            handle_set(regname, setval, regs, child_pid);
+            LOG("HANDLE CMD: set [%s][%llx]\n", regname, setval);
+            continue;
         }
 
         if(strcmp("read", action)==0 || strcmp("r", action)==0) {
             // TODO
+            ADDR_T readaddr;
+            unsigned int readsize;
+            unsigned char readbuf[1024];
+
+            scanf("%llx", &readaddr);
+            scanf("%x", &readsize);
+
+            LOG("HANDLE CMD: read [%llx][%llx] [%x]\n", readaddr, readaddr + baseaddr, readsize);
+            handle_read(child_pid, readaddr + baseaddr, readbuf, readsize);
+
+            continue;
         }
 
         if(strcmp("write", action)==0 || strcmp("w", action)==0) {
             // TODO
+            ADDR_T writeaddr;
+            unsigned int writeval, tempval;
+            unsigned char writebuf[8];
+            unsigned int writesize;
+
+            scanf("%llx", &writeaddr);
+            scanf("%x", &writeval);
+            scanf("%x", &writesize);
+
+            LOG("HANDLE CMD: write [%llx][%llx] [0x%x]<= 0x%x\n", writeaddr, writeaddr + baseaddr, writeval, writesize);
+            tempval = writeval;
+            for (size_t i=0; i<writesize; i++) {
+                writebuf[i] = tempval & 0xFF;
+                tempval /= 0x100;
+            }
+
+            handle_write(child_pid, writeaddr + baseaddr, writebuf, writesize);
+
+
+            continue;
+
         }
 
         if(strcmp("break", action)==0 || strcmp("b", action)==0) {
-            // TODO
+            ADDR_T break_addr;
+
+            scanf("%llx", &break_addr);
+            handle_break(child_pid, break_addr+baseaddr);
+            LOG("HANDLE CMD: break [%llx][%llx]\n", break_addr, break_addr+baseaddr);
+            continue;
         }
 
         if(strcmp("step", action)==0 || strcmp("s", action)==0) {
             // TODO
+            set_debug_state(child_pid, SINGLE_STEP);
+            LOG("HANDLE CMD: step\n");
+            break;
         }
 
         if(strcmp("continue", action)==0 || strcmp("c", action)==0) {
             // TODO
+            set_debug_state(child_pid, NON_STOP);
+            LOG("HANDLE CMD: continue\n");
+            break;
         }
 
         if(strcmp("quit", action)==0 || strcmp("q", action)==0) {
@@ -267,8 +352,9 @@ void get_registers(int pid, struct user_regs_struct *regs) {
 */
 void set_registers(int pid, struct user_regs_struct *regs) {
     // TODO
-    TODO_UNUSED(pid);
-    TODO_UNUSED(regs);
+    if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) {
+        die("Error setting registers");
+    }
 }
 
 
@@ -281,7 +367,8 @@ ADDR_T get_image_baseaddr(int pid) {
     hr_procmaps** procmap = construct_procmaps(pid);
     ADDR_T baseaddr = 0;
     // TODO
-    TODO_UNUSED(procmap);
+    baseaddr = procmap[0]->addr_begin;
+
     return baseaddr;
 }
 
@@ -291,8 +378,22 @@ ADDR_T get_image_baseaddr(int pid) {
 */
 void handle_break_post(int pid, struct user_regs_struct *regs) {
     // TODO
-    TODO_UNUSED(pid);
-    TODO_UNUSED(regs);
+    ADDR_T now_rip = regs->rip;
+    for (int i=0; i<num_bps; i++) {
+        if (bps[i].addr == now_rip - 1) {
+            long word_restore;
+
+            word_restore = ptrace(PTRACE_PEEKTEXT, pid, now_rip - 1, NULL);
+            word_restore = (word_restore & 0xFFFFFFFFFFFFFF00) | bps[i].orig_value;
+
+            ptrace(PTRACE_POKEDATA, pid, now_rip - 1, word_restore);
+            regs->rip--;
+            set_registers(pid, regs);
+            get_registers(pid, regs);
+            LOG("\tFOUND MATCH BP: [%d] [%llx][%02lx]\n", i, regs->rip, word_restore & 0xFF);
+            break;
+        }
+    }
 }
 
 
