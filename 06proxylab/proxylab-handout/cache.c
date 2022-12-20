@@ -7,6 +7,7 @@ cache_t *new_cache(int max_size, int max_obj_size) {
   result->max_obj_size = max_obj_size;
   result->now_size = 0;
   result->head = NULL;
+  Sem_init(&(result->mutex), 0, 1);
 
   return result;
 }
@@ -61,11 +62,11 @@ void print_cache(cache_t *cache) {
   printf("\n");
 }
 
-cache_obj_t *new_object(char *host, char *uri, char *header, char *data) {
+cache_obj_t *new_object(char *host, char *uri, char *header, char *data, int data_size) {
   cache_obj_t *created = malloc(sizeof(cache_obj_t));
   created->header = malloc(sizeof(char) * (strlen(header)+1));
-  created->data = malloc(sizeof(char) * (strlen(data)+1));
-  created->data_size = sizeof(char) * (strlen(data)+1);
+  created->data = malloc(sizeof(char) * data_size);
+  created->data_size = data_size;
   time(&(created->used_at));
 
   strcpy(created->host, host);
@@ -141,6 +142,15 @@ void free_object(cache_obj_t *obj) {
   free(obj->header);
   free(obj);
 }
+
+void P_cache(cache_t *cache) {
+  P(&cache->mutex);
+}
+
+void V_cache(cache_t *cache) {
+  V(&cache->mutex);
+}
+
 
 /* MAIN FOR TEST */
 // int main () {
