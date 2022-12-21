@@ -76,8 +76,8 @@ request_line_t *parse_request_line(char* request) {
 }
 
 void request_handler(void *vargv) {
+  /* PARSE ARGS */
   req_thread_arg_t *req_args = (req_thread_arg_t *)vargv;
-
   int client_fd = req_args->client_fd;
   cache_t *cache = req_args->global_cache;
 
@@ -85,13 +85,13 @@ void request_handler(void *vargv) {
   char client_buf[MAX_STR_LEN];
   request_line_t *request_line;
 
+  /* READ REQUEST*/
   size_t read_num;
   rio_t client_rio;
   Rio_readinitb(&client_rio, client_fd);
+
   if ((read_num = Rio_readlineb(&client_rio, client_buf, MAX_STR_LEN)) == 0) {
     printf("Not readable request!\n");
-    free(request_line->url);
-    free(request_line);
     return;
   }
 
@@ -108,8 +108,7 @@ void request_handler(void *vargv) {
   P_cache(cache);
   cache_obj_t *hit_obj;
   if ((hit_obj = find_cache(cache, request_line->url->hostname, request_line->url->uri)) != NULL) {
-    Rio_writen(client_fd, "HTTP/1.0 200 OK\r\n", 17);
-    Rio_writen(client_fd, hit_obj->header, strlen(hit_obj->header));
+    // cache hit! send object
     Rio_writen(client_fd, hit_obj->data, hit_obj->data_size);
 
     // before return
@@ -155,17 +154,35 @@ void request_handler(void *vargv) {
   }
 
   /* FORWARD RESPONSE */
-  char* cache_buf[MAX_STR_LEN];
-  strcpy(cache_buf, "");
+  size_t cache_len = 0;
+  char cache_header[MAX_STR_LEN] = "";
+  char *cache_data = malloc(sizeof(char) * cache->max_obj_size);
 
   while ((read_num = Rio_readnb(&server_rio, server_buf, MAX_STR_LEN)) > 0) {
-    strcat(cache_buf, server_buf);
+    if (cache_len + read_num < cache->max_obj_size)
+      memcpy(cache_data + cache_len, server_buf, read_num);
     Rio_writen(client_fd, server_buf, read_num);
+    cache_len += read_num;
   }
 
-  // TODO: parse cache_buf, then store in cache
+  /* PUSH CACHE */
+  if (cache_len < cache->max_obj_size) {
+    P_cache(cache);
+
+    cache_obj_t *obj = new_object(
+      request_line->url->hostname,
+      request_line->url->uri,
+      cache_header, cache_data, cache_len
+    );
+
+    if (push_front(cache, obj) != 0)
+      free_object(obj);
+
+    V_cache(cache);
+  }
 
   /* MEMORY RESTORE */
+  free(cache_data);
   free(request_line->url);
   free(request_line);
 
@@ -173,23 +190,11 @@ void request_handler(void *vargv) {
 }
 
 void *request_thread(void *vargv) {
-  printf("hello!\n");
-  
   /* RUN DETACHED */
   Pthread_detach(pthread_self());
 
   /* RUN HANDLER */
   request_handler(vargv);
 
+  return NULL;
 }
-
-
-/* MAIN FOR TEST */
-// int main() {
-//   url_t *temp = parse_url("http://localhost:20973/home.html");
-//   printf("%s\t%s\t%s\t\n", temp->hostname, temp->port, temp->uri);
-
-//   char buf[1000];
-//   scanf("%[^:]:", buf);
-//   printf("%s\n", buf);
-// }

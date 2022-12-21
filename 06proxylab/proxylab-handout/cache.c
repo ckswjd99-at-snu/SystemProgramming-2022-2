@@ -1,6 +1,7 @@
 #include "cache.h"
 
 cache_t *new_cache(int max_size, int max_obj_size) {
+  /* CREATE NEW CACHE OBJECT */
   cache_t *result = malloc(sizeof(cache_t));
 
   result->max_size = max_size;
@@ -37,17 +38,19 @@ cache_obj_t *find_cache(cache_t *cache, char *host, char *uri) {
 }
 
 void free_cache(cache_t *cache) {
+  /* DELETE CACHE OBJECT */
   cache_obj_t *iter_obj = cache->head, *temp;
 
   while (iter_obj != NULL) {
     temp = iter_obj;
     iter_obj = iter_obj->next;
 
-    free_object(iter_obj);
+    free_object(temp);
   }
 }
 
 void print_cache(cache_t *cache) {
+  /* PRINT CACHED OBJECTS */
   cache_obj_t *iter_obj = cache->head, *temp;
 
   printf("max_size: %d, max_obj_size: %d, now_size: %d\n", cache->max_size, cache->max_obj_size, cache->now_size);
@@ -63,6 +66,7 @@ void print_cache(cache_t *cache) {
 }
 
 cache_obj_t *new_object(char *host, char *uri, char *header, char *data, int data_size) {
+  /* CREATE NEW CACHE OBJECT FROM DATA */
   cache_obj_t *created = malloc(sizeof(cache_obj_t));
   created->header = malloc(sizeof(char) * (strlen(header)+1));
   created->data = malloc(sizeof(char) * data_size);
@@ -72,15 +76,15 @@ cache_obj_t *new_object(char *host, char *uri, char *header, char *data, int dat
   strcpy(created->host, host);
   strcpy(created->uri, uri);
   strcpy(created->header, header);
-  strcpy(created->data, data);
+  memcpy(created->data, data, data_size);
 
   return created;
 }
 
-void push_front(cache_t *cache, cache_obj_t *obj) {
+int push_front(cache_t *cache, cache_obj_t *obj) {
   /* CHECK OBJ SIZE */
   if (cache->max_obj_size < obj->data_size) {
-    return;
+    return -1;
   }
 
   /* CHECK AND CREATE CACHE SPACE */
@@ -91,6 +95,7 @@ void push_front(cache_t *cache, cache_obj_t *obj) {
     free_object(pop_object(cache, last));
   }
 
+  /* PUSH CASH OBJECT */
   if (cache->head == NULL) {
     obj->prev = NULL;
     obj->next = NULL;
@@ -103,6 +108,8 @@ void push_front(cache_t *cache, cache_obj_t *obj) {
     cache->head = obj;
   }
   cache->now_size += obj->data_size;
+
+  return 0;
 }
 
 cache_obj_t *pop_object(cache_t *cache, cache_obj_t *obj) {
@@ -138,6 +145,7 @@ cache_obj_t *pop_object(cache_t *cache, cache_obj_t *obj) {
 }
 
 void free_object(cache_obj_t *obj) {
+  /* DELETE OBJECT */
   free(obj->data);
   free(obj->header);
   free(obj);
@@ -150,34 +158,3 @@ void P_cache(cache_t *cache) {
 void V_cache(cache_t *cache) {
   V(&cache->mutex);
 }
-
-
-/* MAIN FOR TEST */
-// int main () {
-//   cache_t *cache_test = new_cache(100, 30);
-
-//   push_front(cache_test, new_object("5iq.cc", "/index1.html", "", "<html>hello world1!</html>"));
-//   push_front(cache_test, new_object("5iq.cc", "/index2.html", "", "<html>hello world2!</html>"));
-//   push_front(cache_test, new_object("5iq.cc", "/index3.html", "", "<html>hello world3!</html>"));
-//   push_front(cache_test, new_object("5iq.cc", "/index4.html", "", "<html>hello world4!</html>"));
-
-//   print_cache(cache_test);
-  
-//   find_cache(cache_test, "5iq.cc", "/index1.html");
-//   find_cache(cache_test, "5iq.cc", "/index2.html");
-  
-//   print_cache(cache_test);
-
-//   push_front(cache_test, new_object("5iq.cc", "/index5.html", "", "<html>hello world5!</html>"));
-//   push_front(cache_test, new_object("5iq.cc", "/index6.html", "", "<html>hello world6!</html>"));
-//   push_front(cache_test, new_object("5iq.cc", "/index7.html", "", "<html>hello world7!</html>"));
-//   find_cache(cache_test, "5iq.cc", "/index4.html");
-//   find_cache(cache_test, "5iq.cc", "/index5.html");
-
-//   push_front(cache_test, new_object("5iq.cc", "/index4.html", "", "<html>hello world4!</html>"));
-//   // push_front(cache_test, new_object("5iq.cc", "/index4.html", "", "<html>hello world4!</html>"));
-//   // push_front(cache_test, new_object("5iq.cc", "/index4.html", "", "<html>hello world4!</html>"));
-//   // push_front(cache_test, new_object("5iq.cc", "/index4.html", "", "<html>hello world4!</html>"));
-
-//   print_cache(cache_test);
-// }

@@ -30,7 +30,7 @@ cache_obj_t *find_cache(cache_t *cache, char *host, char *uri);
 void free_cache(cache_t *cache);
 void print_cache(cache_t *cache);
 cache_obj_t *new_object(char *host, char *uri, char *header, char *data, int data_size);
-void push_front(cache_t *cache, cache_obj_t *obj);
+int push_front(cache_t *cache, cache_obj_t *obj);
 cache_obj_t *pop_object(cache_t *cache, cache_obj_t *obj);
 void free_object(cache_obj_t *obj);
 void P_cache(cache_t *cache);

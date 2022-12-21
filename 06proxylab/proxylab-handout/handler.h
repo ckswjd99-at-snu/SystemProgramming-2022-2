@@ -10,6 +10,10 @@
 #define MAX_URL_LEN 2048
 #define MAX_STR_LEN 8192
 
+#define RESP_LINE   0
+#define RESP_HEAD   1
+#define RESP_DATA   2
+
 typedef struct {
   char hostname[MAX_URL_LEN];
   char port[16];
