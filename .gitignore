@@ -53,3 +53,9 @@ dkms.conf
 
 mdriver
 03malloclab/malloclab-handout/assign3.tar.gz
+
+06proxylab/proxylab-handout.tar
+
+06proxylab/proxylab-handout/.noproxy/
+
+06proxylab/proxylab-handout/.proxy/
